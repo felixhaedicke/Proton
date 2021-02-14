@@ -704,6 +704,7 @@ static EVRCompositorError ivrcompositor_submit_dxvk(
     struct VRVulkanTextureData_t vkdata;
     IDXGIVkInteropDevice *dxvk_device;
     struct Texture_t vktexture;
+    VRTextureWithPose_t our_pose;
 
     VkImage image_handle;
     VkImageLayout image_layout;
@@ -711,6 +712,8 @@ static EVRCompositorError ivrcompositor_submit_dxvk(
     VkImageSubresourceRange subresources;
 
     EVRCompositorError err;
+
+    void *tex;
 
     dxvk_surface->lpVtbl->GetDevice(dxvk_surface, &dxvk_device);
 
@@ -739,12 +742,25 @@ static EVRCompositorError ivrcompositor_submit_dxvk(
     vkdata.m_nFormat = image_info.format;
     vkdata.m_nSampleCount = image_info.samples;
 
-    if (flags & (Submit_TextureWithPose | Submit_TextureWithDepth))
-        FIXME("Unhandled flags %#x.\n", flags & (Submit_TextureWithPose | Submit_TextureWithDepth));
+    if ((flags & Submit_TextureWithPose) && !(flags & Submit_TextureWithDepth))
+    {
+        our_pose = *(VRTextureWithPose_t *)texture;
+        our_pose.texture.handle = &vkdata;
+        our_pose.texture.eType = TextureType_Vulkan;
+        tex = &our_pose;
+    }
+    else
+    {
+        if (flags & Submit_TextureWithDepth)
+        {
+            FIXME("Unhandled flags %#x.\n", flags & (Submit_TextureWithPose | Submit_TextureWithDepth));
+        }
 
-    vktexture = *texture;
-    vktexture.handle = &vkdata;
-    vktexture.eType = TextureType_Vulkan;
+        vktexture = *texture;
+        vktexture.handle = &vkdata;
+        vktexture.eType = TextureType_Vulkan;
+        tex = &vktexture;
+    }
 
     subresources.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     subresources.baseMipLevel = 0;
@@ -757,7 +773,7 @@ static EVRCompositorError ivrcompositor_submit_dxvk(
     dxvk_device->lpVtbl->FlushRenderingCommands(dxvk_device);
     dxvk_device->lpVtbl->LockSubmissionQueue(dxvk_device);
 
-    err = cpp_func(linux_side, eye, &vktexture, bounds, flags);
+    err = cpp_func(linux_side, eye, tex, bounds, flags);
 
     dxvk_device->lpVtbl->ReleaseSubmissionQueue(dxvk_device);
     dxvk_device->lpVtbl->TransitionSurfaceLayout(dxvk_device, dxvk_surface, &subresources,
